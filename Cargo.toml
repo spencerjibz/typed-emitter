@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 futures = "0.3.31"
-uuid = { version = "1.10.0", features = ["v4"] }
+uuid = { version = "1.11.0", features = ["v4"] }
 
 
 [dependencies.tokio]
