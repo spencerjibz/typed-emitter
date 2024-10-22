@@ -1,11 +1,8 @@
 mod tester {
-    #[cfg(feature = "use-async-std")]
     pub use async_std::test;
-    #[cfg(not(feature = "use-async-std"))]
-    pub use tokio::test;
 }
 #[cfg(test)]
-mod typed_async_emitter {
+mod typed_async_emitter_async_std {
 
     use super::*;
     use typed_emitter::{TypedEmitter, TypedListener};
