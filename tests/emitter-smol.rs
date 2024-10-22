@@ -38,7 +38,6 @@ mod typed_async_emitter_smol {
         assert_eq!(emitter.listeners.lock().unwrap().len(), 1);
         assert_eq!(emitter.listeners.lock().unwrap()[&event].len(), 1);
         assert_eq!(emitter.listeners.lock().unwrap()[&event][0].limit, Some(1));
-
     }
 
     #[apply(test)]
