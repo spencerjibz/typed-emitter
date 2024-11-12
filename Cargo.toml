@@ -10,7 +10,7 @@ uuid = { version = "1.11.0", features = ["v4"] }
 
 [dev-dependencies]
 async-std = { version = "1.12.0", features = ["alloc", "attributes"] }
-tokio = { version = "1.41.0", default-features = false, features = [
+tokio = { version = "1.41.1", default-features = false, features = [
     "rt",
     "macros",
     "rt-multi-thread",
