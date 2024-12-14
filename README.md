@@ -3,7 +3,6 @@
 [![Crates.io](https://img.shields.io/crates/v/typed-emitter)](https://crates.io/crates/typed-emitter)
 [![docs.rs](https://img.shields.io/docsrs/async-event-emitter)](https://docs.rs/typed-emitter/)
 [![CI](https://github.com/spencerjibz/typed-emitter/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/typed-emitter/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/spencerjibz/typed-emitter/graph/badge.svg?token=EK0QJ1VUY2)](https://codecov.io/gh/spencerjibz/typed-emitter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/async-event-emitter)
