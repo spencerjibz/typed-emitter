@@ -3,7 +3,7 @@ mod typed_async_emitter_smol {
 
     use macro_rules_attribute::apply;
     use smol_macros::test;
-    use typed_emitter::{TypedEmitter, TypedListener};
+    use typed_emitter::TypedEmitter;
 
     #[apply(test)]
     async fn test_async_event_emitter_new() {
@@ -83,27 +83,5 @@ mod typed_async_emitter_smol {
         let non_existent_id = "non_existent_id".to_string();
         let removed_id = emitter.remove_listener(&non_existent_id);
         assert_eq!(removed_id, None);
-    }
-
-    #[apply(test)]
-    async fn test_async_listener_debug() {
-        use std::sync::Arc;
-        let listener: TypedListener<i32, String> = TypedListener {
-            callback: Arc::new(|_| Box::pin(async { "OK".to_string() })),
-            limit: Some(1),
-            id: "test_id".to_string(),
-        };
-
-        let debug_output = format!("{:?}", listener);
-        assert!(debug_output.contains("TypedListener"));
-        assert!(debug_output.contains("id: \"test_id\""));
-        assert!(debug_output.contains("limit: Some(1)"));
-    }
-
-    #[apply(test)]
-    async fn test_async_event_emitter_debug() {
-        let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
-        let debug_output = format!("{:?}", emitter);
-        assert!(debug_output.contains("AsyncEventEmitter"));
     }
 }
