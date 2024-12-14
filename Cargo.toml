@@ -18,7 +18,6 @@ categories = [
   "asynchronous",
   "event-emitters",
   "web-like",
-  "typed-emitter"
 ]
 readme = "./README.md"
 
