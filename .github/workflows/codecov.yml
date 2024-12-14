@@ -30,6 +30,8 @@ jobs:
                - uses: actions-rs/cargo@v1
 
                  with:
+                      toolchain: nightly-2024-01-06
+                     
                       command: test
                       args: --all-features --no-fail-fast
                  env:
