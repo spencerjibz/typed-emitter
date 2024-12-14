@@ -353,9 +353,6 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
     /// ```
     /// use typed_emitter::TypedEmitter;
     /// let mut event_emitter = TypedEmitter::new();
-    ///
-    /// // This will print <"Hello world!"> whenever the <"Some event"> event is emitted
-
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     ///  event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
     /// ```
