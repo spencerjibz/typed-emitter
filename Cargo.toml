@@ -2,7 +2,13 @@
 name = "typed-emitter"
 version = "0.1.0"
 edition = "2021"
-
+authors = [ "Spencer Najib", "Dylan Kerler" ]
+keywords = [ "event-emitter", "tokio", "async-rust", "futures", "typed-emitter" ]
+license = "MIT"
+repository = "https://github.com/spencerjibz/typed-emitter"
+homepage = "https://github.com/spencerjibz/typed-emitter"
+categories = [ "asynchronous", "event-emitters", "web-like", "typed-emitter" ]
+readme = "./README.md"
 [dependencies]
 futures = "0.3.31"
 uuid = { version = "1.11.0", features = ["v4"] }
