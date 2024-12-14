@@ -14,11 +14,7 @@ license = "MIT"
 description = "Typed Async event emitter"
 repository = "https://github.com/spencerjibz/typed-emitter"
 homepage = "https://github.com/spencerjibz/typed-emitter"
-categories = [
-  "asynchronous",
-  "event-emitters",
-  "web-like",
-]
+categories = [ "asynchronous", "event-emitters", "web-like" ]
 readme = "./README.md"
 
 [dependencies]
