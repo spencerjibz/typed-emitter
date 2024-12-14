@@ -16,5 +16,5 @@ tokio = { version = "1.33.0", default-features = false, features = [
     "rt-multi-thread",
 ] }
 smol-macros = "0.1.1"
-
+lazy_static = "1.5.0"
 macro_rules_attribute = "0.2.0"
