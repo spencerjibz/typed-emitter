@@ -45,7 +45,7 @@ use typed_emitter::TypedEmitter;
 #[tokio::main]
 async fn main () {
 // Create a typed emitter with String event names, i32 parameters and String return values
-let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
+let emitter = TypedEmitter::new();
 // Add a persistent listener
 let id = emitter.on("event".to_string(), |value| async move {
     format!("Received: {}", value)
