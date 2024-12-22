@@ -1,11 +1,11 @@
 /*!
    A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/async-event-emitter)
   # Key Features
-   - Strongly types event-type, parameters and return Values
+   - Strong types  for the event, its parameters and return Values
    - Support for any type of eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
    - Supports  for all common async runtimes (Tokio, async-std and smol)
    - Reduced dependencies (only futures and uuid)
-   - Thready Safe
+   - Thread Safe
 ## Getting Started
 #### tokio
 ```rust
@@ -153,7 +153,7 @@ type ListenerMap<K, T, R> = Arc<Mutex<HashMap<K, Vec<TypedListener<T, R>>>>>;
 #[derive(Default, Clone)]
 pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType> {
     pub listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
-    all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
+    pub all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
 }
 
 impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static + Clone>
@@ -213,6 +213,12 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
                 listeners.remove(index);
             }
         }
+        // fire to the global listener;
+        if let Some(global_listener) = self.all_listener.read().unwrap().as_ref() {
+            let callback = Arc::clone(&global_listener.callback);
+            let value = value.clone();
+            futures.push(callback(value))
+        }
 
         while futures.next().await.is_some() {}
     }
@@ -241,6 +247,13 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
                 return Some(id_to_delete.to_string());
             }
         }
+        let all_listener = self.all_listener.read().unwrap().clone();
+        // check if the id matches that of the global listener;
+        if let Some(all_listener) = all_listener.as_ref() {
+            if id_to_delete == all_listener.id {
+                self.all_listener.write().unwrap().take();
+            }
+        }
 
         None
     }
@@ -263,11 +276,6 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
 
         let entry = lock.entry(event).or_default();
         entry.push(listener);
-        if let Some(global_listener) = self.all_listener.read().unwrap().clone() {
-            if !entry.contains(&global_listener) && limit.is_none() {
-                entry.push(global_listener);
-            }
-        }
 
         id
     }
@@ -309,15 +317,10 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
         };
 
         self.all_listener.write().unwrap().replace(listener.clone());
-        let listeners = self.listeners.clone();
-        let mut listeners = listeners.lock().unwrap();
-        // set the global listener if there are event already avaiable;
-        listeners.iter_mut().for_each(|(_, listener_list)| {
-            listener_list.push(listener.clone());
-        });
 
         id
     }
+
     /// Adds an event listener that will only execute the callback once - Then the listener will be deleted.
     /// Returns the id of the newly added listener.
     ///
