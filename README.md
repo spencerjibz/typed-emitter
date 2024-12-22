@@ -9,7 +9,7 @@ A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/asy
 
 #### Key Features
 
-- Strong types  for event-type, parameters and return Values
+- Strong types  for event-type, its parameters and return Values
 - Support for any type of eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
 - Supports for all common async runtimes (Tokio, async-std and smol)
 - Reduced dependencies (only futures and uuid)
@@ -62,7 +62,7 @@ use typed_emitter::TypedEmitter;
 #[tokio::main]
 async fn main () {
 // Create a typed emitter with String event names, i32 parameters and String return values
-let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
+let emitter = TypedEmitter::new();
 // Add a persistent listener
 let id = emitter.on("event".to_string(), |value| async move {
     format!("Received: {}", value)
