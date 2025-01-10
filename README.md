@@ -103,7 +103,6 @@ lazy_static! {
 
 #[tokio::main]
 async fn main() {
-   // We need to maintain a lock through the mutex so we can avoid data races
    EVENT_EMITTER.on("Hello".to_string(), |_: i32|  async {println!("hello there!")});
    EVENT_EMITTER.emit("Hello".to_string(), 1).await;
 }
