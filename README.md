@@ -20,12 +20,12 @@ A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/asy
 ##### tokio
 
 ```rust
-    use typed_emitter::TypedEmitter;
-    #[tokio::main]
-    async fn main () {
-    // Create a typed emitter with String event names, i32 parameters and String return values
-    let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
-    }
+use typed_emitter::TypedEmitter;
+#[tokio::main]
+async fn main () {
+// Create a typed emitter with String event names, i32 parameters and String return values
+let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
+}
 
 ```
 
