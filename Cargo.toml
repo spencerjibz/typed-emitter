@@ -21,7 +21,7 @@ readme = "./README.md"
 futures = "0.3.31"
 
   [dependencies.uuid]
-  version = "1.11.0"
+  version = "1.11.1"
   features = [ "v4" ]
 
 [dev-dependencies]
