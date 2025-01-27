@@ -18,11 +18,13 @@ categories = [ "asynchronous", "web-programming" ]
 readme = "./README.md"
 
 [dependencies]
-futures = "0.3.31"
+dashmap = {version = "6.1.0", default-features = false}
+futures = {version = "0.3.31", default-features = false,features = ["std"]}
 
   [dependencies.uuid]
   version = "1.11.0"
   features = [ "v4" ]
+  default-features = false
 
 [dev-dependencies]
 smol-macros = "0.1.1"
