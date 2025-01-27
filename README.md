@@ -8,25 +8,23 @@
 A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/async-event-emitter)
 
 #### Key Features
-
-- Strong types  for event-type, its parameters and return Values
-- Support for any type of eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
+- Strong types  for event type, its parameters and return Values
+- Support for any eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
 - Supports for all common async runtimes (Tokio, async-std and smol)
-- Reduced dependencies (only futures and uuid)
-- Thread Safe
+- Thread Safe and can be used lock-free (supports interior mutability).
 
+***Note***: To use versatile serializable return and event types, use [`async-event-emitter`](https://crates.io/crates/async-event-emitter) for this. 
 #### Getting Started
 
 ##### tokio
 
 ```rust
-    use typed_emitter::TypedEmitter;
-    #[tokio::main]
-    async fn main () {
-    // Create a typed emitter with String event names, i32 parameters and String return values
-    let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
-    }
-
+use typed_emitter::TypedEmitter;
+#[tokio::main]
+async fn main () {
+// Create a typed emitter with String event names, i32 parameters and String return values
+let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
+}
 ```
 
 ##### Async-std
@@ -87,7 +85,7 @@ emitter.remove_listener(&id);
 
 You'll likely want to have a single EventEmitter instance that can be shared across files;<br>
 
-After all, one of the main points of using an EventEmitter is to avoid passing down a value through several nested functions/types and having a global subscription service.
+After all, one of the main benefits of using an EventEmitter is that it avoids passing a value through several nested functions/types and provides a global subscription service.
 
 ```rust
 // global_event_emitter.rs
@@ -97,13 +95,12 @@ use typed_emitter::TypedEmitter;
 
 // Use lazy_static! because the size of EventEmitter is not known at compile time
 lazy_static! {
-   // Export the emitter with `pub` keyword
+   // Export the emitter with the `pub` keyword
    pub static ref EVENT_EMITTER: TypedEmitter<String, i32, ()> = TypedEmitter::new();
 }
 
 #[tokio::main]
 async fn main() {
-   // We need to maintain a lock through the mutex so we can avoid data races
    EVENT_EMITTER.on("Hello".to_string(), |_: i32|  async {println!("hello there!")});
    EVENT_EMITTER.emit("Hello".to_string(), 1).await;
 }
@@ -120,13 +117,12 @@ async fn random_function() {
 You'll likely want to have a single EventEmitter instance for multiple events;<br>
 
 ```rust
-
 use typed_emitter::TypedEmitter;
 #[derive(Eq,PartialEq, Clone, Hash)]
 enum JobState {
      Closed,
      Completed,
-     Failed ,
+     Failed,
     Stalled
  }
 
