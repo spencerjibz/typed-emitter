@@ -126,14 +126,13 @@ async fn main() {
   License: MIT
 */
 
-use std::collections::VecDeque;
-use std::hash::Hash;
-use std::sync::{Mutex, RwLock};
-use std::{collections::HashMap, sync::Arc};
-
 use futures::future::{BoxFuture, Future, FutureExt};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use std::collections::VecDeque;
+use std::hash::Hash;
+use std::sync::{Arc, RwLock};
+
 use uuid::Uuid;
 
 pub type AsyncCB<T, R> = dyn Fn(T) -> BoxFuture<'static, R> + Send + Sync + 'static;
@@ -149,26 +148,36 @@ impl<T, P> PartialEq for TypedListener<T, P> {
         self.id == other.id && self.limit == other.limit
     }
 }
-type ListenerMap<K, T, R> = Arc<Mutex<HashMap<K, Vec<TypedListener<T, R>>>>>;
-#[derive(Default, Clone)]
+
+use dashmap::DashMap;
+type ListenerMap<K, T, R> = Arc<DashMap<K, Vec<TypedListener<T, R>>>>;
+#[derive(Clone)]
 pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType> {
     pub listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
     pub all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
+}
+
+impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static + Clone> Default
+    for TypedEmitter<K, P, R>
+{
+    fn default() -> Self {
+        Self {
+            listeners: Default::default(),
+            all_listener: Default::default(),
+        }
+    }
 }
 
 impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static + Clone>
     TypedEmitter<K, P, R>
 {
     pub fn new() -> Self {
-        Self {
-            listeners: Arc::default(),
-            all_listener: Arc::new(RwLock::new(None)),
-        }
+        Self::default()
     }
 
     /// Return the number of events
     pub fn event_count(&self) -> usize {
-        self.listeners.lock().expect("failed to get lock").len()
+        self.listeners.len()
     }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously runs  each callback.
@@ -189,7 +198,7 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
     ///  
     pub async fn emit(&self, event: K, value: P) {
         let mut futures = FuturesUnordered::new();
-        if let Some(listeners) = self.listeners.lock().unwrap().get_mut(&event) {
+        if let Some(mut listeners) = self.listeners.get_mut(&event) {
             let mut listeners_to_remove: VecDeque<usize> = VecDeque::new();
 
             for (index, listener) in listeners.iter_mut().enumerate() {
@@ -238,7 +247,8 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
     /// event_emitter.remove_listener(&listener_id);
     /// ```
     pub fn remove_listener(&self, id_to_delete: &str) -> Option<String> {
-        for (_, event_listeners) in self.listeners.lock().unwrap().iter_mut() {
+        for mut mult_ref in self.listeners.iter_mut() {
+            let event_listeners = mult_ref.value_mut();
             if let Some(index) = event_listeners
                 .iter()
                 .position(|listener| listener.id == id_to_delete)
@@ -272,9 +282,7 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
             callback: Arc::new(parsed_callback),
         };
 
-        let mut lock = self.listeners.lock().unwrap();
-
-        let entry = lock.entry(event).or_default();
+        let mut entry = self.listeners.entry(event).or_default();
         entry.push(listener);
 
         id

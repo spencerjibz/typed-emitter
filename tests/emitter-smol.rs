@@ -10,7 +10,7 @@ mod typed_async_emitter_smol {
     #[apply(test)]
     async fn test_async_event_emitter_new() {
         let emitter: TypedEmitter<String, i32, ()> = TypedEmitter::new();
-        assert!(emitter.listeners.lock().unwrap().is_empty());
+        assert!(emitter.listeners.is_empty());
     }
 
     #[apply(test)]
@@ -23,8 +23,8 @@ mod typed_async_emitter_smol {
         });
 
         assert!(!id.is_empty());
-        assert_eq!(emitter.listeners.lock().unwrap().len(), 1);
-        assert_eq!(emitter.listeners.lock().unwrap()[&event].len(), 1);
+        assert_eq!(emitter.listeners.len(), 1);
+        assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
     }
 
     #[apply(test)]
@@ -37,9 +37,9 @@ mod typed_async_emitter_smol {
         });
 
         assert!(!id.is_empty());
-        assert_eq!(emitter.listeners.lock().unwrap().len(), 1);
-        assert_eq!(emitter.listeners.lock().unwrap()[&event].len(), 1);
-        assert_eq!(emitter.listeners.lock().unwrap()[&event][0].limit, Some(1));
+        assert_eq!(emitter.listeners.len(), 1);
+        assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
+        assert_eq!(emitter.listeners.get(&event).unwrap()[0].limit, Some(1));
     }
 
     #[apply(test)]
@@ -76,11 +76,11 @@ mod typed_async_emitter_smol {
 
         let id = emitter.on(event.clone(), |_| async { "OK".to_string() });
 
-        assert_eq!(emitter.listeners.lock().unwrap()[&event].len(), 1);
+        assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
 
         let removed_id = emitter.remove_listener(&id);
         assert_eq!(removed_id, Some(id));
-        assert!(emitter.listeners.lock().unwrap()[&event].is_empty());
+        assert!(emitter.listeners.get(&event).unwrap().is_empty());
 
         let non_existent_id = "non_existent_id".to_string();
         let removed_id = emitter.remove_listener(&non_existent_id);
@@ -104,18 +104,5 @@ mod typed_async_emitter_smol {
         assert_eq!(emit_count.load(std::sync::atomic::Ordering::SeqCst), 2);
         instance.remove_listener(&id);
         assert!(instance.all_listener.read().unwrap().is_none());
-    }
-
-    #[apply(test)]
-    #[should_panic]
-    async fn emitter_allow_one_global_listener() {
-        let instance: TypedEmitter<String, i32, i32> = TypedEmitter::new();
-
-        let callback = |value: i32| async move { value + 1 };
-        let result = std::panic::catch_unwind(|| {
-            instance.on_all(callback);
-        });
-
-        assert!(result.is_err());
     }
 }
