@@ -27,7 +27,7 @@ default-features = false
 features = [ "std" ]
 
 [dependencies.uuid]
-version = "1.11.0"
+version = "1.13.1"
 features = [ "v4" ]
 default-features = false
 
