@@ -41,6 +41,6 @@ macro_rules_attribute = "0.2.0"
   features = [ "alloc", "attributes" ]
 
   [dev-dependencies.tokio]
-  version = "1.44.2"
+  version = "1.45.0"
   default-features = false
   features = [ "rt", "macros", "rt-multi-thread" ]
