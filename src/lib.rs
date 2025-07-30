@@ -152,14 +152,12 @@ impl<T, P> PartialEq for TypedListener<T, P> {
 use dashmap::DashMap;
 type ListenerMap<K, T, R> = Arc<DashMap<K, Vec<TypedListener<T, R>>>>;
 #[derive(Clone)]
-pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType> {
+pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
     pub listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
     pub all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
 }
 
-impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static + Clone> Default
-    for TypedEmitter<K, P, R>
-{
+impl<K: Eq + Hash + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
     fn default() -> Self {
         Self {
             listeners: Default::default(),
@@ -168,9 +166,7 @@ impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static +
     }
 }
 
-impl<K: Eq + Hash + Clone, P: Clone + Send + Sync + 'static, R: Send + 'static + Clone>
-    TypedEmitter<K, P, R>
-{
+impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     pub fn new() -> Self {
         Self::default()
     }
