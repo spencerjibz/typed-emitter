@@ -152,7 +152,7 @@ impl<T, P> PartialEq for TypedListener<T, P> {
 use dashmap::DashMap;
 type ListenerMap<K, T, R> = Arc<DashMap<K, Vec<TypedListener<T, R>>>>;
 #[derive(Clone)]
-pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType> {
+pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
     pub listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
     pub all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
 }
