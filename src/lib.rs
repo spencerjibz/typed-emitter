@@ -157,7 +157,7 @@ pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
     pub all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
 }
 
-impl<K: Eq + Hash + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
+impl<K: Eq + Hash, P, R> Default for TypedEmitter<K, P, R> {
     fn default() -> Self {
         Self {
             listeners: Default::default(),
@@ -166,7 +166,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
     }
 }
 
-impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
+impl<K: Eq + Hash, P: Clone, R> TypedEmitter<K, P, R> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -253,7 +253,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
                 return Some(id_to_delete.to_string());
             }
         }
-        let all_listener = self.all_listener.read().unwrap().clone();
+        let all_listener = self.all_listener.read().unwrap();
         // check if the id matches that of the global listener;
         if let Some(all_listener) = all_listener.as_ref() {
             if id_to_delete == all_listener.id {
@@ -320,7 +320,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
             callback: Arc::new(parsed_callback),
         };
 
-        self.all_listener.write().unwrap().replace(listener.clone());
+        self.all_listener.write().unwrap().replace(listener);
 
         id
     }
