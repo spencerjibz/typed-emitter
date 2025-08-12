@@ -27,20 +27,20 @@ default-features = false
 features = [ "std" ]
 
 [dependencies.uuid]
-version = "1.14.0"
+version = "1.17.0"
 features = [ "v4" ]
 default-features = false
 
 [dev-dependencies]
 smol-macros = "0.1.1"
 lazy_static = "1.5.0"
-macro_rules_attribute = "0.2.0"
+macro_rules_attribute = "0.2.2"
 
   [dev-dependencies.async-std]
   version = "1.12.0"
   features = [ "alloc", "attributes" ]
 
   [dev-dependencies.tokio]
-  version = "1.41.1"
+  version = "1.47.1"
   default-features = false
   features = [ "rt", "macros", "rt-multi-thread" ]
