@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 mod tester {
     pub use async_std::test;
 }
@@ -7,6 +8,7 @@ mod typed_async_emitter_async_std {
     use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
     use typed_emitter::TypedEmitter;
+    use uuid::Uuid;
 
     #[tester::test]
     async fn test_async_event_emitter_new() {
@@ -20,10 +22,9 @@ mod typed_async_emitter_async_std {
         let event = "test_event".to_string();
 
         let id = emitter.on(event.clone(), |value| async move {
-            format!("Received: {}", value)
+            format!("Received: {value}")
         });
 
-        assert!(!id.is_empty());
         assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
         assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
     }
@@ -34,10 +35,9 @@ mod typed_async_emitter_async_std {
         let event = "test_event".to_string();
 
         let id = emitter.once(event.clone(), |value| async move {
-            format!("Received once: {}", value)
+            format!("Received once: {value}")
         });
 
-        assert!(!id.is_empty());
         assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
         assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
         assert_eq!(emitter.listeners.get(&event).unwrap()[0].limit, Some(1));
@@ -57,7 +57,7 @@ mod typed_async_emitter_async_std {
             let result = Arc::clone(&result_clone);
             async move {
                 let mut result = result.lock().await;
-                result.push(format!("Received: {}", value));
+                result.push(format!("Received: {value}"));
                 "OK".to_string()
             }
         });
@@ -79,12 +79,12 @@ mod typed_async_emitter_async_std {
 
         assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
 
-        let removed_id = emitter.remove_listener(&id);
+        let removed_id = emitter.remove_listener(id);
         assert_eq!(removed_id, Some(id));
         assert!(emitter.listeners.get(&event).unwrap().is_empty());
 
-        let non_existent_id = "non_existent_id".to_string();
-        let removed_id = emitter.remove_listener(&non_existent_id);
+        let non_existent_id = Uuid::new_v4();
+        let removed_id = emitter.remove_listener(non_existent_id);
         assert_eq!(removed_id, None);
     }
 
@@ -103,7 +103,7 @@ mod typed_async_emitter_async_std {
         instance.emit("test_event", count_clone).await;
         assert!(instance.all_listener.read().unwrap().is_some());
         assert_eq!(emit_count.load(std::sync::atomic::Ordering::SeqCst), 2);
-        instance.remove_listener(&id);
+        instance.remove_listener(id);
         assert!(instance.all_listener.read().unwrap().is_none());
     }
 }
