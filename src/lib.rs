@@ -60,7 +60,7 @@ emitter.once("event".to_string(), |value| async move {
 emitter.emit("event".to_string(), 42).await;
 
 // Remove a listener by ID
-emitter.remove_listener(&id);
+emitter.remove_listener(id);
 
 }
 
@@ -140,7 +140,7 @@ pub type AsyncCB<T, R> = dyn Fn(T) -> BoxFuture<'static, R> + Send + Sync + 'sta
 pub struct TypedListener<T, R> {
     pub callback: Arc<AsyncCB<T, R>>,
     pub limit: Option<u64>,
-    pub id: String,
+    pub id: Uuid,
 }
 
 impl<T, P> PartialEq for TypedListener<T, P> {
@@ -240,9 +240,9 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     /// println!("{:?}", event_emitter.listeners);
     ///
     /// // Removes the listener that we just added
-    /// event_emitter.remove_listener(&listener_id);
+    /// event_emitter.remove_listener(listener_id);
     /// ```
-    pub fn remove_listener(&self, id_to_delete: &str) -> Option<String> {
+    pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
         for mut mult_ref in self.listeners.iter_mut() {
             let event_listeners = mult_ref.value_mut();
             if let Some(index) = event_listeners
@@ -250,7 +250,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
                 .position(|listener| listener.id == id_to_delete)
             {
                 event_listeners.remove(index);
-                return Some(id_to_delete.to_string());
+                return Some(id_to_delete);
             }
         }
         let all_listener = self.all_listener.read().unwrap().clone();
@@ -264,16 +264,16 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
         None
     }
 
-    fn on_limited<F, C>(&self, event: K, limit: Option<u64>, callback: C) -> String
+    fn on_limited<F, C>(&self, event: K, limit: Option<u64>, callback: C) -> Uuid
     where
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
     {
-        let id = Uuid::new_v4().to_string();
+        let id = Uuid::new_v4();
         let parsed_callback = move |value: P| callback(value).boxed();
 
         let listener = TypedListener {
-            id: id.clone(),
+            id,
             limit,
             callback: Arc::new(parsed_callback),
         };
@@ -302,7 +302,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     ///     // >> <Nothing happens here since listener was deleted>
     /// }
     /// ```
-    pub fn on_all<F, C>(&self, callback: C) -> String
+    pub fn on_all<F, C>(&self, callback: C) -> Uuid
     where
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
@@ -311,11 +311,11 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
             self.all_listener.read().unwrap().is_none(),
             "only one global listener is allowed"
         );
-        let id = Uuid::new_v4().to_string();
+        let id = Uuid::new_v4();
         let parsed_callback = move |value: P| callback(value).boxed();
 
         let listener = TypedListener {
-            id: id.clone(),
+            id,
             limit: None,
             callback: Arc::new(parsed_callback),
         };
@@ -344,7 +344,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     /// // >> <Nothing happens here since listener was deleted>
     /// }
     /// ```
-    pub fn once<F, C>(&self, event: K, callback: C) -> String
+    pub fn once<F, C>(&self, event: K, callback: C) -> Uuid
     where
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
@@ -363,7 +363,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     ///  event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
     /// ```
-    pub fn on<F, C>(&self, event: K, callback: C) -> String
+    pub fn on<F, C>(&self, event: K, callback: C) -> Uuid
     where
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
