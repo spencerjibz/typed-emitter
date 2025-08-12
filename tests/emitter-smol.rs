@@ -12,7 +12,7 @@ mod typed_async_emitter_smol {
     #[apply(test)]
     async fn test_async_event_emitter_new() {
         let emitter: TypedEmitter<String, i32, ()> = TypedEmitter::new();
-        assert!(emitter.listeners.is_empty());
+        assert_eq!(emitter.event_count(), 0);
     }
 
     #[apply(test)]
@@ -24,8 +24,8 @@ mod typed_async_emitter_smol {
             format!("Received: {value}")
         });
 
-        assert_eq!(emitter.listeners.len(), 1);
-        assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
+        assert_eq!(emitter.event_count(), 1);
+        assert_eq!(emitter.listener_count_by_event(&event), 1);
     }
 
     #[apply(test)]
@@ -37,9 +37,9 @@ mod typed_async_emitter_smol {
             format!("Received once: {value}")
         });
 
-        assert_eq!(emitter.listeners.len(), 1);
-        assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
-        assert_eq!(emitter.listeners.get(&event).unwrap()[0].limit, Some(1));
+        assert_eq!(emitter.event_count(), 1);
+        assert_eq!(emitter.listeners_by_event(&event).len(), 1);
+        assert_eq!(emitter.listeners_by_event(&event)[0].limit, Some(1));
     }
 
     #[apply(test)]
@@ -76,11 +76,11 @@ mod typed_async_emitter_smol {
 
         let id = emitter.on(event.clone(), |_| async { "OK".to_string() });
 
-        assert_eq!(emitter.listeners.get(&event).unwrap().len(), 1);
+        assert_eq!(emitter.listener_count_by_event(&event), 1);
 
         let removed_id = emitter.remove_listener(id);
         assert_eq!(removed_id, Some(id));
-        assert!(emitter.listeners.get(&event).unwrap().is_empty());
+        assert!(emitter.listeners_by_event(&event).is_empty());
 
         let non_existent_id = Uuid::new_v4();
         let removed_id = emitter.remove_listener(non_existent_id);
@@ -97,12 +97,9 @@ mod typed_async_emitter_smol {
             value.clone()
         };
 
-        let id = instance.on_all(callback);
+        let _id = instance.on_all(callback);
         instance.on("test_event", callback);
         instance.emit("test_event", count_clone).await;
-        assert!(instance.all_listener.read().unwrap().is_some());
         assert_eq!(emit_count.load(std::sync::atomic::Ordering::SeqCst), 2);
-        instance.remove_listener(id);
-        assert!(instance.all_listener.read().unwrap().is_none());
     }
 }

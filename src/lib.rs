@@ -127,7 +127,7 @@ async fn main() {
 */
 
 use futures::future::{BoxFuture, Future, FutureExt};
-use futures::stream::FuturesUnordered;
+use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use std::collections::VecDeque;
 use std::hash::Hash;
@@ -153,8 +153,8 @@ use dashmap::DashMap;
 type ListenerMap<K, T, R> = Arc<DashMap<K, Vec<TypedListener<T, R>>>>;
 #[derive(Clone)]
 pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
-    pub listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
-    pub all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
+    listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
+    all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
 }
 
 impl<K: Eq + Hash + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
@@ -175,6 +175,21 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     pub fn event_count(&self) -> usize {
         self.listeners.len()
     }
+    /// Returns the numbers of listners per event
+    pub fn listener_count_by_event(&self, event: &K) -> usize {
+        if let Some(listeners) = self.listeners.get(event) {
+            return listeners.len();
+        }
+        0
+    }
+
+    pub fn listeners_by_event(&self, event: &K) -> Vec<TypedListener<P, R>> {
+        if let Some(listeners) = self.listeners.get(event) {
+            let values = listeners.to_vec();
+            return values;
+        }
+        vec![]
+    }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously runs  each callback.
     ///
@@ -193,7 +208,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     ///
     ///  
     pub async fn emit(&self, event: K, value: P) {
-        let mut futures = FuturesUnordered::new();
+        let mut futures = FuturesOrdered::new();
         if let Some(mut listeners) = self.listeners.get_mut(&event) {
             let mut listeners_to_remove: VecDeque<usize> = VecDeque::new();
 
@@ -202,10 +217,10 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
                 let value = value.clone();
 
                 match listener.limit {
-                    None => futures.push(callback(value)),
+                    None => futures.push_back(callback(value)),
                     Some(limit) => {
                         if limit != 0 {
-                            futures.push(callback(value));
+                            futures.push_back(callback(value));
 
                             listener.limit = Some(limit - 1);
                         } else {
@@ -221,8 +236,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
         // fire to the global listener;
         if let Some(global_listener) = self.all_listener.read().unwrap().as_ref() {
             let callback = Arc::clone(&global_listener.callback);
-            let value = value.clone();
-            futures.push(callback(value))
+            futures.push_back(callback(value))
         }
 
         while futures.next().await.is_some() {}
@@ -237,7 +251,7 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     /// let mut event_emitter = TypedEmitter::new();
     /// let listener_id =
     ///     event_emitter.on("Some event", |value: ()| async { println!("Hello world!") });
-    /// println!("{:?}", event_emitter.listeners);
+    /// println!("{:?}", event_emitter.event_count());
     ///
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(listener_id);
