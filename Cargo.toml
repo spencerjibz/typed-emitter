@@ -2,29 +2,22 @@
 name = "typed-emitter"
 version = "0.1.3"
 edition = "2021"
-authors = [ "Spencer Najib", "Dylan Kerler" ]
-keywords = [
-  "event-emitter",
-  "tokio",
-  "async-rust",
-  "futures",
-  "typed-emitter"
-]
+authors = ["Spencer Najib", "Dylan Kerler"]
+keywords = ["event-emitter", "tokio", "async-rust", "futures", "typed-emitter"]
 license = "MIT"
 description = "Typed Async event emitter"
 repository = "https://github.com/spencerjibz/typed-emitter"
 homepage = "https://github.com/spencerjibz/typed-emitter"
-categories = [ "asynchronous", "web-programming" ]
+categories = ["asynchronous", "web-programming"]
 readme = "./README.md"
 
-[dependencies.dashmap]
-version = "6.1.0"
-default-features = false
 
+[dependencies.crossbeam-skiplist]
+version = "0.1.3"
 [dependencies.futures]
 version = "0.3.31"
 default-features = false
-features = [ "std" ]
+features = ["std"]
 
 [dependencies.uuid]
 version = "1.18.1"
@@ -36,11 +29,11 @@ smol-macros = "0.1.1"
 lazy_static = "1.5.0"
 macro_rules_attribute = "0.2.2"
 
-  [dev-dependencies.async-std]
-  version = "1.12.0"
-  features = [ "alloc", "attributes" ]
+[dev-dependencies.async-std]
+version = "1.12.0"
+features = ["alloc", "attributes"]
 
-  [dev-dependencies.tokio]
-  version = "1.47.1"
-  default-features = false
-  features = [ "rt", "macros", "rt-multi-thread" ]
+[dev-dependencies.tokio]
+version = "1.47.1"
+default-features = false
+features = ["rt", "macros", "rt-multi-thread"]
