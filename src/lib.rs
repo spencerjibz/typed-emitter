@@ -126,47 +126,43 @@ async fn main() {
   License: MIT
 */
 
+use crossbeam_skiplist::SkipMap;
 use futures::future::{BoxFuture, Future, FutureExt};
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use std::collections::VecDeque;
-use std::hash::Hash;
-use std::sync::{Arc, RwLock};
-
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub type AsyncCB<T, R> = dyn Fn(T) -> BoxFuture<'static, R> + Send + Sync + 'static;
 #[derive(Clone)]
 pub struct TypedListener<T, R> {
     pub callback: Arc<AsyncCB<T, R>>,
-    pub limit: Option<u64>,
+    pub limit: Option<Arc<AtomicU64>>,
     pub id: Uuid,
 }
 
-impl<T, P> PartialEq for TypedListener<T, P> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.limit == other.limit
-    }
+#[derive(PartialOrd, Ord, PartialEq, Eq)]
+enum Event<K> {
+    Unique(K),
+    All,
 }
-
-use dashmap::DashMap;
-type ListenerMap<K, T, R> = Arc<DashMap<K, Vec<TypedListener<T, R>>>>;
+type ListenerMap<K, T, R> = Arc<SkipMap<K, SkipMap<Uuid, TypedListener<T, R>>>>;
 #[derive(Clone)]
 pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
-    listeners: ListenerMap<Key, CallBackParameter, CallBackReturnType>,
-    all_listener: Arc<RwLock<Option<TypedListener<CallBackParameter, CallBackReturnType>>>>,
+    listeners: ListenerMap<Event<Key>, CallBackParameter, CallBackReturnType>,
 }
 
-impl<K: Eq + Hash + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
+impl<K: Eq + Clone + Ord, P: Clone, R> Default for TypedEmitter<K, P, R> {
     fn default() -> Self {
         Self {
             listeners: Default::default(),
-            all_listener: Default::default(),
         }
     }
 }
 
-impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
+impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, R> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -209,34 +205,33 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     ///  
     pub async fn emit(&self, event: K, value: P) {
         let mut futures = FuturesOrdered::new();
-        if let Some(mut listeners) = self.listeners.get_mut(&event) {
-            let mut listeners_to_remove: VecDeque<usize> = VecDeque::new();
+        let key = Event::Unique(event);
+        if let Some(listeners) = self.listeners.get(&key) {
+            let mut listeners_to_remove: VecDeque<Uuid> = VecDeque::new();
+            let listeners = listeners.value();
 
-            for (index, listener) in listeners.iter_mut().enumerate() {
+            for entry in listeners.iter() {
+                let index = entry.key();
+                let listener = entry.value();
                 let callback = Arc::clone(&listener.callback);
                 let value = value.clone();
 
-                match listener.limit {
+                match &listener.limit {
                     None => futures.push_back(callback(value)),
                     Some(limit) => {
-                        if limit != 0 {
+                        if limit.load(std::sync::atomic::Ordering::Acquire) != 0 {
                             futures.push_back(callback(value));
 
-                            listener.limit = Some(limit - 1);
+                            limit.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
                         } else {
-                            listeners_to_remove.push_back(index);
+                            listeners_to_remove.push_back(*index);
                         }
                     }
                 }
             }
             while let Some(index) = listeners_to_remove.pop_front() {
-                listeners.remove(index);
+                listeners.remove(&index);
             }
-        }
-        // fire to the global listener;
-        if let Some(global_listener) = self.all_listener.read().unwrap().as_ref() {
-            let callback = Arc::clone(&global_listener.callback);
-            futures.push_back(callback(value))
         }
 
         while futures.next().await.is_some() {}
@@ -257,23 +252,13 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     /// event_emitter.remove_listener(listener_id);
     /// ```
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
-        for mut mult_ref in self.listeners.iter_mut() {
-            let event_listeners = mult_ref.value_mut();
-            if let Some(index) = event_listeners
-                .iter()
-                .position(|listener| listener.id == id_to_delete)
-            {
-                event_listeners.remove(index);
-                return Some(id_to_delete);
-            }
+        for mult_ref in self.listeners.iter() {
+            let event_listeners = mult_ref.value();
+            let _ = event_listeners.remove(&id_to_delete);
+
+            return Some(id_to_delete);
         }
-        let all_listener = self.all_listener.read().unwrap().clone();
         // check if the id matches that of the global listener;
-        if let Some(all_listener) = all_listener.as_ref() {
-            if id_to_delete == all_listener.id {
-                self.all_listener.write().unwrap().take();
-            }
-        }
 
         None
     }
@@ -285,16 +270,16 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
     {
         let id = Uuid::new_v4();
         let parsed_callback = move |value: P| callback(value).boxed();
-
+        let limit = limit.map(|u| Arc::new(AtomicU64::new(u)));
         let listener = TypedListener {
             id,
             limit,
             callback: Arc::new(parsed_callback),
         };
+        let key = Event::Unique(event);
 
-        let mut entry = self.listeners.entry(event).or_default();
-        entry.push(listener);
-
+        let entry = self.listeners.get_or_insert(key, SkipMap::default());
+        entry.value().get_or_insert(id, listener);
         id
     }
 
@@ -321,8 +306,9 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
     {
+        let global_key = Event::All;
         assert!(
-            self.all_listener.read().unwrap().is_none(),
+            self.listeners.contains_key(&global_key),
             "only one global listener is allowed"
         );
         let id = Uuid::new_v4();
@@ -334,8 +320,8 @@ impl<K: Eq + Hash + Clone, P: Clone, R: Clone> TypedEmitter<K, P, R> {
             callback: Arc::new(parsed_callback),
         };
 
-        self.all_listener.write().unwrap().replace(listener.clone());
-
+        let entry = self.listeners.get_or_insert(global_key, SkipMap::default());
+        entry.value().get_or_insert(id, listener);
         id
     }
 
