@@ -38,7 +38,14 @@ mod typed_async_emitter_async_std {
         });
 
         assert_eq!(emitter.listener_count_by_event(&event), 1);
-        assert_eq!(emitter.listeners_by_event(&event)[0].limit, Some(1));
+        assert_eq!(
+            emitter.listeners_by_event(&event)[0]
+                .limit
+                .clone()
+                .unwrap_or_default()
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
     }
 
     #[tester::test]
@@ -66,6 +73,36 @@ mod typed_async_emitter_async_std {
         assert_eq!(result.len(), 1);
 
         assert_eq!(result[0], "Received: 42");
+    }
+    #[tester::test]
+    async fn test_limited_listener() {
+        let instance = TypedEmitter::new();
+        let emit_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = emit_count.clone();
+        let callback = |value: Arc<AtomicUsize>| async move {
+            value.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            dbg!("hello");
+            value.clone()
+        };
+        let event = "test_event";
+
+        let id = instance.on_limited(event, Some(3), callback);
+        instance.emit(event, count_clone.clone()).await;
+        instance.emit(event, count_clone.clone()).await;
+        instance.emit(event, count_clone.clone()).await;
+        let mut listeners = instance.listeners_by_event(&event);
+        // we expect the listener limit to be zero by now;
+        if let Some(listener) = listeners.pop() {
+            let limit = listener
+                .limit
+                .map(|d| d.load(std::sync::atomic::Ordering::Acquire));
+            assert_eq!(limit, Some(0))
+        }
+        instance.emit(event, count_clone.clone()).await;
+        dbg!(instance.event_count());
+        assert_eq!(emit_count.load(std::sync::atomic::Ordering::SeqCst), 3);
+        // we expect the listener to be garage colleted  by here
+        assert_eq!(instance.listener_count_by_event(&event), 0);
     }
 
     #[tester::test]
