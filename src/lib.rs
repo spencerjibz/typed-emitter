@@ -290,8 +290,27 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
         }
         None
     }
-
-    fn on_limited<F, C>(&self, event: K, limit: Option<u64>, callback: C) -> Uuid
+    /// Adds an event listener that will only execute the callback by the times limted. - Then the listener will be deleted.
+    /// Returns the id of the newly added listener.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use typed_emitter::TypedEmitter;
+    ///   #[tokio::main]
+    ///   async fn main () {
+    /// let mut event_emitter = TypedEmitter::new();
+    ///
+    /// event_emitter.on_limited("Some event",Some(2), |value: ()| async {println!("Hello world!")});
+    /// event_emitter.emit("Some event", ()).await;
+    /// // >> "Hello world!"
+    /// event_emitter.emit("Some event", ()).await;
+    /// // >> "Hello world!"
+    /// event_emitter.emit("Some event", ()).await;
+    /// // >> <Nothing happens here since listener was deleted>
+    /// }
+    /// ```
+    pub fn on_limited<F, C>(&self, event: K, limit: Option<u64>, callback: C) -> Uuid
     where
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
@@ -350,8 +369,6 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
 
         let entry = self.listeners.get_or_insert(global_key, SkipMap::default());
         entry.value().get_or_insert(id, listener);
-        dbg!(entry.value().len());
-
         id
     }
 
