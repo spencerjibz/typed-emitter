@@ -120,7 +120,7 @@ mod typed_async_emitter_tokio {
         };
         let event = "test_event";
 
-         instance.on_limited(event, Some(3), callback);
+        instance.on_limited(event, Some(3), callback);
         instance.emit(event, count_clone.clone()).await;
         instance.emit(event, count_clone.clone()).await;
         instance.emit(event, count_clone.clone()).await;

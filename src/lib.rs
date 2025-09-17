@@ -297,17 +297,19 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
     ///
     /// ```
     /// use typed_emitter::TypedEmitter;
-    ///   #[tokio::main]
-    ///   async fn main () {
-    /// let mut event_emitter = TypedEmitter::new();
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut event_emitter = TypedEmitter::new();
     ///
-    /// event_emitter.on_limited("Some event",Some(2), |value: ()| async {println!("Hello world!")});
-    /// event_emitter.emit("Some event", ()).await;
-    /// // >> "Hello world!"
-    /// event_emitter.emit("Some event", ()).await;
-    /// // >> "Hello world!"
-    /// event_emitter.emit("Some event", ()).await;
-    /// // >> <Nothing happens here since listener was deleted>
+    ///     event_emitter.on_limited("Some event", Some(2), |value: ()| async {
+    ///         println!("Hello world!")
+    ///     });
+    ///     event_emitter.emit("Some event", ()).await;
+    ///     // >> "Hello world!"
+    ///     event_emitter.emit("Some event", ()).await;
+    ///     // >> "Hello world!"
+    ///     event_emitter.emit("Some event", ()).await;
+    ///     // >> <Nothing happens here since listener was deleted>
     /// }
     /// ```
     pub fn on_limited<F, C>(&self, event: K, limit: Option<u64>, callback: C) -> Uuid
