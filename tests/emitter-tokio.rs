@@ -38,7 +38,14 @@ mod typed_async_emitter_tokio {
         });
 
         assert_eq!(emitter.listener_count_by_event(&event), 1);
-        assert_eq!(emitter.listeners_by_event(&event)[0].limit, Some(1));
+        assert_eq!(
+            emitter.listeners_by_event(&event)[0]
+                .limit
+                .clone()
+                .unwrap_or_default()
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
     }
 
     #[tester::test]

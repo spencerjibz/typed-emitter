@@ -39,7 +39,14 @@ mod typed_async_emitter_smol {
 
         assert_eq!(emitter.event_count(), 1);
         assert_eq!(emitter.listeners_by_event(&event).len(), 1);
-        assert_eq!(emitter.listeners_by_event(&event)[0].limit, Some(1));
+        assert_eq!(
+            emitter.listeners_by_event(&event)[0]
+                .limit
+                .clone()
+                .unwrap_or_default()
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        )
     }
 
     #[apply(test)]
