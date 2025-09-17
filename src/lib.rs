@@ -101,7 +101,7 @@ You'll likely want to have a single EventEmitter instance for multiple events;<b
  ```
 
 use typed_emitter::TypedEmitter;
- #[derive(Eq,PartialEq, Clone, Hash)]
+ #[derive(Eq,PartialEq, Clone, Ord, PartialOrd)]
  enum JobState {
       Closed,
       Completed,
@@ -139,14 +139,28 @@ pub type AsyncCB<T, R> = dyn Fn(T) -> BoxFuture<'static, R> + Send + Sync + 'sta
 #[derive(Clone)]
 pub struct TypedListener<T, R> {
     pub callback: Arc<AsyncCB<T, R>>,
+    pub is_global: bool,
     pub limit: Option<Arc<AtomicU64>>,
     pub id: Uuid,
+}
+impl<T, R> PartialEq for TypedListener<T, R> {
+    fn eq(&self, other: &Self) -> bool {
+        self.limit
+            .as_ref()
+            .map(|d| d.load(std::sync::atomic::Ordering::Acquire))
+            == other
+                .limit
+                .as_ref()
+                .map(|d| d.load(std::sync::atomic::Ordering::Acquire))
+            && self.id == other.id
+            && self.is_global == other.is_global
+    }
 }
 
 #[derive(PartialOrd, Ord, PartialEq, Eq)]
 enum Event<K> {
-    Unique(K),
     All,
+    Unique(K),
 }
 type ListenerMap<K, T, R> = Arc<SkipMap<K, SkipMap<Uuid, TypedListener<T, R>>>>;
 #[derive(Clone)]
@@ -154,7 +168,7 @@ pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
     listeners: ListenerMap<Event<Key>, CallBackParameter, CallBackReturnType>,
 }
 
-impl<K: Eq + Clone + Ord, P: Clone, R> Default for TypedEmitter<K, P, R> {
+impl<K: Clone + Ord, P: Clone, R> Default for TypedEmitter<K, P, R> {
     fn default() -> Self {
         Self {
             listeners: Default::default(),
@@ -173,16 +187,21 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
     }
     /// Returns the numbers of listners per event
     pub fn listener_count_by_event(&self, event: &K) -> usize {
-        if let Some(listeners) = self.listeners.get(event) {
-            return listeners.len();
+        let key = Event::Unique(event.clone());
+        if let Some(listeners) = self.listeners.get(&key) {
+            return listeners.value().len();
         }
         0
     }
 
     pub fn listeners_by_event(&self, event: &K) -> Vec<TypedListener<P, R>> {
-        if let Some(listeners) = self.listeners.get(event) {
-            let values = listeners.to_vec();
-            return values;
+        let event = Event::Unique(event.clone());
+        if let Some(entry) = self.listeners.get(&event) {
+            let listeners = entry.value();
+            return listeners
+                .iter()
+                .map(|event| event.value().clone())
+                .collect();
         }
         vec![]
     }
@@ -219,7 +238,7 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
                 match &listener.limit {
                     None => futures.push_back(callback(value)),
                     Some(limit) => {
-                        if limit.load(std::sync::atomic::Ordering::Acquire) != 0 {
+                        if limit.load(std::sync::atomic::Ordering::Acquire) > 0 {
                             futures.push_back(callback(value));
 
                             limit.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
@@ -231,6 +250,13 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
             }
             while let Some(index) = listeners_to_remove.pop_front() {
                 listeners.remove(&index);
+            }
+        }
+        let global = Event::All;
+        if let Some(entry) = self.listeners.get(&global) {
+            if let Some(listener) = entry.value().front() {
+                let callback = listener.value().callback.clone();
+                futures.push_back(callback(value))
             }
         }
 
@@ -252,14 +278,16 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
     /// event_emitter.remove_listener(listener_id);
     /// ```
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
+        let mut done = false;
         for mult_ref in self.listeners.iter() {
             let event_listeners = mult_ref.value();
-            let _ = event_listeners.remove(&id_to_delete);
-
+            if event_listeners.remove(&id_to_delete).is_some() {
+                done = true;
+            }
+        }
+        if done {
             return Some(id_to_delete);
         }
-        // check if the id matches that of the global listener;
-
         None
     }
 
@@ -272,6 +300,7 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
         let parsed_callback = move |value: P| callback(value).boxed();
         let limit = limit.map(|u| Arc::new(AtomicU64::new(u)));
         let listener = TypedListener {
+            is_global: false,
             id,
             limit,
             callback: Arc::new(parsed_callback),
@@ -307,21 +336,22 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
         F: Future<Output = R> + Send + Sync + 'static,
     {
         let global_key = Event::All;
-        assert!(
-            self.listeners.contains_key(&global_key),
-            "only one global listener is allowed"
-        );
+        let exists = self.listeners.contains_key(&global_key);
+        assert!(!exists, "only one global listener is allowed");
         let id = Uuid::new_v4();
         let parsed_callback = move |value: P| callback(value).boxed();
 
         let listener = TypedListener {
             id,
+            is_global: true,
             limit: None,
             callback: Arc::new(parsed_callback),
         };
 
         let entry = self.listeners.get_or_insert(global_key, SkipMap::default());
         entry.value().get_or_insert(id, listener);
+        dbg!(entry.value().len());
+
         id
     }
 
@@ -376,6 +406,7 @@ impl<T, R> std::fmt::Debug for TypedListener<T, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TypedListener")
             .field("id", &self.id)
+            .field("is_global", &self.is_global)
             .field("limit", &self.limit)
             .finish()
     }
