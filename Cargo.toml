@@ -44,7 +44,7 @@ version = "1.13.2"
 features = ["alloc", "attributes"]
 
 [dev-dependencies.tokio]
-version = "1.49.0"
+version = "1.51.0"
 default-features = false
 features = ["rt", "macros", "rt-multi-thread", "sync"]
 
