@@ -1,51 +1,58 @@
 [package]
 name = "typed-emitter"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.72"
-authors = ["Spencer Najib", "Dylan Kerler"]
-keywords = ["event-emitter", "tokio", "async-rust", "futures", "typed-emitter"]
+authors = [ "Spencer Najib", "Dylan Kerler" ]
+keywords = [
+  "event-emitter",
+  "tokio",
+  "async-rust",
+  "futures",
+  "typed-emitter"
+]
 license = "MIT"
 description = "Typed Async event emitter"
 repository = "https://github.com/spencerjibz/typed-emitter"
 homepage = "https://github.com/spencerjibz/typed-emitter"
-categories = ["asynchronous", "web-programming"]
+categories = [ "asynchronous", "web-programming" ]
 readme = "./README.md"
 
 [dependencies]
 papaya = "0.2.5"
 
-[dependencies.futures]
-version = "0.3.32"
-default-features = false
-features = ["std"]
+  [dependencies.futures]
+  version = "0.3.32"
+  default-features = false
+  features = [ "std" ]
 
-[dependencies.uuid]
-version = "1.19.0"
-features = ["v4"]
-default-features = false
+  [dependencies.uuid]
+  version = "1.19.0"
+  features = [ "v4" ]
+  default-features = false
 
 [dev-dependencies]
 num_cpus = "1.17"
 smol-macros = "0.1.1"
 lazy_static = "1.5.0"
 macro_rules_attribute = "0.2.2"
-criterion = { version = "0.7.0", features = [
-  "async",
-  "async_tokio",
-  "html_reports",
-] }
-typed-emitter-old = { package = "typed-emitter", version = "0.1.3" }
 
+  [dev-dependencies.criterion]
+  version = "0.7.0"
+  features = [ "async", "async_tokio", "html_reports" ]
 
-[dev-dependencies.async-std]
-version = "1.13.2"
-features = ["alloc", "attributes"]
+  [dev-dependencies.typed-emitter-old]
+  package = "typed-emitter"
+  version = "0.1.3"
 
-[dev-dependencies.tokio]
-version = "1.52.3"
-default-features = false
-features = ["rt", "macros", "rt-multi-thread", "sync"]
+  [dev-dependencies.async-std]
+  version = "1.13.2"
+  features = [ "alloc", "attributes" ]
+
+  [dev-dependencies.tokio]
+  version = "1.52.3"
+  default-features = false
+  features = [ "rt", "macros", "rt-multi-thread", "sync" ]
 
 [[bench]]
 name = "emitter"
