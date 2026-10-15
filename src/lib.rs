@@ -168,6 +168,15 @@ impl<K: Hash + Eq + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
     }
 }
 
+fn claim<T, R>(listener: &TypedListener<T, R>) -> bool {
+    listener.limit.as_ref().map_or(true, |limit| {
+        // `try_update` replaces `fetch_update` only on newer toolchains; keep this for older Rust versions
+        #[allow(deprecated)]
+        let claimed = limit.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+        claimed.is_ok()
+    })
+}
+
 impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, R> {
     pub fn new() -> Self {
         Self::default()
@@ -217,16 +226,10 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
                 let listeners = listeners.pin();
                 let mut expired = Vec::new();
                 for (id, listener) in listeners.iter() {
-                    match &listener.limit {
-                        None => futures.push((listener.callback)(value.clone())),
-                        Some(limit) => {
-                            if limit.load(Ordering::Acquire) > 0 {
-                                futures.push((listener.callback)(value.clone()));
-                                limit.fetch_sub(1, Ordering::AcqRel);
-                            } else {
-                                expired.push(*id);
-                            }
-                        }
+                    if claim(listener) {
+                        futures.push((listener.callback)(value.clone()));
+                    } else {
+                        expired.push(*id);
                     }
                 }
                 for id in expired {
