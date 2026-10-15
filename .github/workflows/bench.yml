@@ -1,0 +1,78 @@
+name: Benchmark
+
+on:
+     pull_request:
+          branches:
+               - main
+
+env:
+     CARGO_TERM_COLOR: always
+
+jobs:
+     benchmark:
+          name: compare benchmarks against the base branch
+          runs-on: ubuntu-latest
+          permissions:
+               contents: read
+               pull-requests: write
+          env:
+               BASE_REF: ${{ github.base_ref }}
+               CARGO_TARGET_DIR: ${{ github.workspace }}/target
+          steps:
+               - uses: actions/checkout@v4
+                 with:
+                      fetch-depth: 0
+               - uses: dtolnay/rust-toolchain@stable
+               - uses: actions/cache@v4
+                 with:
+                      path: |
+                           ~/.cargo/bin/
+                           ~/.cargo/registry/index/
+                           ~/.cargo/registry/cache/
+                           ~/.cargo/git/db/
+                      key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.toml') }}
+               - name: Install critcmp
+                 run: command -v critcmp || cargo install critcmp --locked
+               - name: Benchmark base branch
+                 run: |
+                      git worktree add "$RUNNER_TEMP/base" "origin/$BASE_REF"
+                      cd "$RUNNER_TEMP/base"
+                      if [ ! -f benches/emitter.rs ]; then
+                           cp "$GITHUB_WORKSPACE/benches/emitter.rs" benches/
+                           printf '\n[[bench]]\nname = "emitter"\nharness = false\n' >> Cargo.toml
+                           echo "BASE_USES_PR_BENCHES=true" >> "$GITHUB_ENV"
+                      fi
+                      cargo bench --bench emitter -- --save-baseline base \
+                           || echo "::warning::benchmarks failed to build or run on $BASE_REF"
+               - name: Benchmark pull request
+                 run: cargo bench --bench emitter -- --save-baseline pr
+               - name: Compare
+                 run: |
+                      node .github/scripts/benchmark-table.js collect target/criterion base pr > benchmark-results.json
+                      node .github/scripts/benchmark-table.js render benchmark-results.json "$BASE_REF" > comment.md
+                      {
+                           cat comment.md
+                           if find target/criterion -type d -name base | grep -q .; then
+                                echo
+                                echo '```'
+                                critcmp base pr
+                                echo '```'
+                           fi
+                      } >> "$GITHUB_STEP_SUMMARY"
+               - uses: actions/upload-artifact@v4
+                 with:
+                      name: benchmark-results
+                      path: benchmark-results.json
+               - name: Comment on pull request
+                 if: github.event.pull_request.head.repo.full_name == github.repository
+                 uses: actions/github-script@v7
+                 with:
+                      script: |
+                           const fs = require('fs');
+                           const post = require('./.github/scripts/benchmark-comment.js');
+                           await post({
+                                github,
+                                context,
+                                issueNumber: context.issue.number,
+                                body: fs.readFileSync('comment.md', 'utf8'),
+                           });
