@@ -23,16 +23,21 @@ function estimate(dir, baseline) {
 }
 
 function collect(criterionDir, base, pr, baseUsesPrBenches) {
-     const dirs = fs.existsSync(criterionDir) ? findBenchmarks(criterionDir, base) : [];
-     const results = dirs
+     const dirs = fs.existsSync(criterionDir) ? findBenchmarks(criterionDir, pr) : [];
+     const rows = dirs
           .map((dir) => ({
-               id: JSON.parse(fs.readFileSync(path.join(dir, base, 'benchmark.json'), 'utf8')).full_id,
+               id: JSON.parse(fs.readFileSync(path.join(dir, pr, 'benchmark.json'), 'utf8')).full_id,
                base: estimate(dir, base),
                pr: estimate(dir, pr),
           }))
-          .filter((row) => row.base !== null && row.pr !== null)
           .sort((a, b) => a.id.localeCompare(b.id));
-     return { baseUsesPrBenches, results };
+     const results = rows.filter((row) => row.base !== null);
+     const comparisons = rows
+          .filter((row) => row.base === null && row.id.startsWith('compare_'))
+          .map(({ id, pr: value }) => ({ id, pr: value }));
+     return comparisons.length > 0
+          ? { baseUsesPrBenches, results, comparisons }
+          : { baseUsesPrBenches, results };
 }
 
 function hasExactKeys(value, keys) {
@@ -45,21 +50,31 @@ function hasExactKeys(value, keys) {
 }
 
 function validate(data) {
-     if (!hasExactKeys(data, 'baseUsesPrBenches,results') || typeof data.baseUsesPrBenches !== 'boolean') {
+     const shape = ['baseUsesPrBenches,results', 'baseUsesPrBenches,comparisons,results'];
+     if (
+          !shape.some((keys) => hasExactKeys(data, keys)) ||
+          typeof data.baseUsesPrBenches !== 'boolean'
+     ) {
           throw new Error('invalid benchmark results');
      }
-     if (!Array.isArray(data.results) || data.results.length > MAX_RESULTS) {
-          throw new Error('invalid benchmark results');
+     const comparisons = 'comparisons' in data ? data.comparisons : [];
+     for (const [rows, keys, values] of [
+          [data.results, 'base,id,pr', (row) => [row.base, row.pr]],
+          [comparisons, 'id,pr', (row) => [row.pr]],
+     ]) {
+          if (!Array.isArray(rows) || rows.length > MAX_RESULTS) {
+               throw new Error('invalid benchmark results');
+          }
+          for (const row of rows) {
+               const valid =
+                    hasExactKeys(row, keys) &&
+                    typeof row.id === 'string' &&
+                    ID_PATTERN.test(row.id) &&
+                    values(row).every((v) => typeof v === 'number' && Number.isFinite(v) && v > 0);
+               if (!valid) throw new Error('invalid benchmark result');
+          }
      }
-     for (const row of data.results) {
-          const valid =
-               hasExactKeys(row, 'base,id,pr') &&
-               typeof row.id === 'string' &&
-               ID_PATTERN.test(row.id) &&
-               [row.base, row.pr].every((v) => typeof v === 'number' && Number.isFinite(v) && v > 0);
-          if (!valid) throw new Error('invalid benchmark result');
-     }
-     return data;
+     return { ...data, comparisons };
 }
 
 function formatTime(ns) {
@@ -74,16 +89,34 @@ function render(data, baseRef) {
      const lines = [MARKER, `### Benchmarks against \`${ref}\``, ''];
      if (data.results.length === 0) {
           lines.push(`Benchmarks could not run on \`${ref}\`, so there is nothing to compare against.`);
-          return `${lines.join('\n')}\n`;
+     } else {
+          if (data.baseUsesPrBenches) {
+               lines.push(`\`${ref}\` has no benchmarks, so it was measured with this PR's.`, '');
+          }
+          lines.push(`| Benchmark | \`${ref}\` | this PR | Change |`, '|---|---:|---:|---:|');
+          for (const { id, base, pr } of data.results) {
+               const change = ((pr - base) / base) * 100;
+               const sign = change > 0 ? '+' : '';
+               lines.push(`| \`${id}\` | ${formatTime(base)} | ${formatTime(pr)} | ${sign}${change.toFixed(1)}% |`);
+          }
      }
-     if (data.baseUsesPrBenches) {
-          lines.push(`\`${ref}\` has no benchmarks, so it was measured with this PR's.`, '');
-     }
-     lines.push(`| Benchmark | \`${ref}\` | this PR | Change |`, '|---|---:|---:|---:|');
-     for (const { id, base, pr } of data.results) {
-          const change = ((pr - base) / base) * 100;
-          const sign = change > 0 ? '+' : '';
-          lines.push(`| \`${id}\` | ${formatTime(base)} | ${formatTime(pr)} | ${sign}${change.toFixed(1)}% |`);
+     if (data.comparisons.length > 0) {
+          const groups = new Map();
+          for (const { id, pr } of data.comparisons) {
+               const split = id.lastIndexOf('/');
+               const group = split > 0 ? id.slice(0, split) : id;
+               const name = split > 0 ? id.slice(split + 1) : id;
+               if (!groups.has(group)) groups.set(group, new Map());
+               groups.get(group).set(name, pr);
+          }
+          const names = [...new Set([...groups.values()].flatMap((g) => [...g.keys()]))].sort();
+          lines.push('', '#### Compared with other emitters (this PR)', '');
+          lines.push(`| Benchmark | ${names.map((n) => `\`${n}\``).join(' | ')} |`);
+          lines.push(`|---|${names.map(() => '---:').join('|')}|`);
+          for (const [group, values] of groups) {
+               const cells = names.map((n) => (values.has(n) ? formatTime(values.get(n)) : '-'));
+               lines.push(`| \`${group}\` | ${cells.join(' | ')} |`);
+          }
      }
      return `${lines.join('\n')}\n`;
 }
