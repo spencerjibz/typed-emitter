@@ -262,12 +262,16 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
     /// event_emitter.remove_listener(listener_id);
     /// ```
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
-        let removed = self
-            .listeners
-            .pin()
-            .values()
-            .any(|listeners| listeners.pin().remove(&id_to_delete).is_some());
-        removed.then_some(id_to_delete)
+        let events = self.listeners.pin();
+        let removed = events.iter().any(|(event, listeners)| {
+            matches!(event, Event::Unique(_)) && listeners.pin().remove(&id_to_delete).is_some()
+        });
+        let removed_global = events
+            .remove_if(&Event::All, |_, global| {
+                global.pin().contains_key(&id_to_delete)
+            })
+            .is_ok_and(|global| global.is_some());
+        (removed || removed_global).then_some(id_to_delete)
     }
     /// Adds an event listener that will only execute the callback by the times limted. - Then the listener will be deleted.
     /// Returns the id of the newly added listener.
@@ -337,8 +341,6 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
     {
-        let exists = self.listeners.pin().contains_key(&Event::All);
-        assert!(!exists, "only one global listener is allowed");
         let id = Uuid::new_v4();
         let parsed_callback = move |value: P| callback(value).boxed();
 
@@ -349,11 +351,10 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
             callback: Arc::new(parsed_callback),
         };
 
-        self.listeners
-            .pin()
-            .get_or_insert_with(Event::All, Listeners::default)
-            .pin()
-            .insert(id, listener);
+        let global = Listeners::default();
+        global.pin().insert(id, listener);
+        let installed = self.listeners.pin().try_insert(Event::All, global).is_ok();
+        assert!(installed, "only one global listener is allowed");
         id
     }
 
