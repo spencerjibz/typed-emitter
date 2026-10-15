@@ -4,8 +4,7 @@
    - Strong types  for the event, its parameters and return Values
    - Support for any type of eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
    - Supports  for all common async runtimes (Tokio, async-std and smol)
-   - Reduced dependencies (only futures and uuid)
-   - Thread Safe
+   - Lock-free and thread safe
 ## Getting Started
 #### tokio
 ```rust
@@ -101,7 +100,7 @@ You'll likely want to have a single EventEmitter instance for multiple events;<b
  ```
 
 use typed_emitter::TypedEmitter;
- #[derive(Eq,PartialEq, Clone, Ord, PartialOrd)]
+ #[derive(Eq,PartialEq, Clone, Hash)]
  enum JobState {
       Closed,
       Completed,
@@ -126,12 +125,9 @@ async fn main() {
   License: MIT
 */
 
-use crossbeam_skiplist::SkipMap;
-use futures::future::{BoxFuture, Future, FutureExt};
-use futures::stream::FuturesOrdered;
-use futures::StreamExt;
-use std::collections::VecDeque;
-use std::sync::atomic::AtomicU64;
+use futures::future::{join_all, BoxFuture, Future, FutureExt};
+use std::hash::Hash;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -145,30 +141,26 @@ pub struct TypedListener<T, R> {
 }
 impl<T, R> PartialEq for TypedListener<T, R> {
     fn eq(&self, other: &Self) -> bool {
-        self.limit
-            .as_ref()
-            .map(|d| d.load(std::sync::atomic::Ordering::Acquire))
-            == other
-                .limit
-                .as_ref()
-                .map(|d| d.load(std::sync::atomic::Ordering::Acquire))
+        self.limit.as_ref().map(|d| d.load(Ordering::Acquire))
+            == other.limit.as_ref().map(|d| d.load(Ordering::Acquire))
             && self.id == other.id
             && self.is_global == other.is_global
     }
 }
 
-#[derive(PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq)]
 enum Event<K> {
     All,
     Unique(K),
 }
-type ListenerMap<K, T, R> = Arc<SkipMap<K, SkipMap<Uuid, TypedListener<T, R>>>>;
+type Listeners<T, R> = papaya::HashMap<Uuid, TypedListener<T, R>>;
+type ListenerMap<K, T, R> = Arc<papaya::HashMap<K, Listeners<T, R>>>;
 #[derive(Clone)]
 pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
     listeners: ListenerMap<Event<Key>, CallBackParameter, CallBackReturnType>,
 }
 
-impl<K: Clone + Ord, P: Clone, R> Default for TypedEmitter<K, P, R> {
+impl<K: Hash + Eq + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
     fn default() -> Self {
         Self {
             listeners: Default::default(),
@@ -176,7 +168,7 @@ impl<K: Clone + Ord, P: Clone, R> Default for TypedEmitter<K, P, R> {
     }
 }
 
-impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, R> {
+impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, R> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -187,23 +179,18 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
     }
     /// Returns the numbers of listners per event
     pub fn listener_count_by_event(&self, event: &K) -> usize {
-        let key = Event::Unique(event.clone());
-        if let Some(listeners) = self.listeners.get(&key) {
-            return listeners.value().len();
-        }
-        0
+        self.listeners
+            .pin()
+            .get(&Event::Unique(event.clone()))
+            .map_or(0, papaya::HashMap::len)
     }
 
     pub fn listeners_by_event(&self, event: &K) -> Vec<TypedListener<P, R>> {
-        let event = Event::Unique(event.clone());
-        if let Some(entry) = self.listeners.get(&event) {
-            let listeners = entry.value();
-            return listeners
-                .iter()
-                .map(|event| event.value().clone())
-                .collect();
-        }
-        vec![]
+        self.listeners
+            .pin()
+            .get(&Event::Unique(event.clone()))
+            .map(|listeners| listeners.pin().values().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously runs  each callback.
@@ -223,44 +210,38 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
     ///
     ///  
     pub async fn emit(&self, event: K, value: P) {
-        let mut futures = FuturesOrdered::new();
-        let key = Event::Unique(event);
-        if let Some(listeners) = self.listeners.get(&key) {
-            let mut listeners_to_remove: VecDeque<Uuid> = VecDeque::new();
-            let listeners = listeners.value();
-
-            for entry in listeners.iter() {
-                let index = entry.key();
-                let listener = entry.value();
-                let callback = Arc::clone(&listener.callback);
-                let value = value.clone();
-
-                match &listener.limit {
-                    None => futures.push_back(callback(value)),
-                    Some(limit) => {
-                        if limit.load(std::sync::atomic::Ordering::Acquire) > 0 {
-                            futures.push_back(callback(value));
-
-                            limit.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                        } else {
-                            listeners_to_remove.push_back(*index);
+        let futures = {
+            let events = self.listeners.pin();
+            let mut futures = Vec::new();
+            if let Some(listeners) = events.get(&Event::Unique(event)) {
+                let listeners = listeners.pin();
+                let mut expired = Vec::new();
+                for (id, listener) in listeners.iter() {
+                    match &listener.limit {
+                        None => futures.push((listener.callback)(value.clone())),
+                        Some(limit) => {
+                            if limit.load(Ordering::Acquire) > 0 {
+                                futures.push((listener.callback)(value.clone()));
+                                limit.fetch_sub(1, Ordering::AcqRel);
+                            } else {
+                                expired.push(*id);
+                            }
                         }
                     }
                 }
+                for id in expired {
+                    listeners.remove(&id);
+                }
             }
-            while let Some(index) = listeners_to_remove.pop_front() {
-                listeners.remove(&index);
+            if let Some(global) = events.get(&Event::All) {
+                if let Some(listener) = global.pin().values().next() {
+                    futures.push((listener.callback)(value));
+                }
             }
-        }
-        let global = Event::All;
-        if let Some(entry) = self.listeners.get(&global) {
-            if let Some(listener) = entry.value().front() {
-                let callback = listener.value().callback.clone();
-                futures.push_back(callback(value))
-            }
-        }
+            futures
+        };
 
-        while futures.next().await.is_some() {}
+        join_all(futures.into_iter().map(|future| future.map(drop))).await;
     }
 
     /// Removes an event listener with the given id
@@ -278,17 +259,12 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
     /// event_emitter.remove_listener(listener_id);
     /// ```
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
-        let mut done = false;
-        for mult_ref in self.listeners.iter() {
-            let event_listeners = mult_ref.value();
-            if event_listeners.remove(&id_to_delete).is_some() {
-                done = true;
-            }
-        }
-        if done {
-            return Some(id_to_delete);
-        }
-        None
+        let removed = self
+            .listeners
+            .pin()
+            .values()
+            .any(|listeners| listeners.pin().remove(&id_to_delete).is_some());
+        removed.then_some(id_to_delete)
     }
     /// Adds an event listener that will only execute the callback by the times limted. - Then the listener will be deleted.
     /// Returns the id of the newly added listener.
@@ -326,10 +302,12 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
             limit,
             callback: Arc::new(parsed_callback),
         };
-        let key = Event::Unique(event);
 
-        let entry = self.listeners.get_or_insert(key, SkipMap::default());
-        entry.value().get_or_insert(id, listener);
+        self.listeners
+            .pin()
+            .get_or_insert_with(Event::Unique(event), Listeners::default)
+            .pin()
+            .insert(id, listener);
         id
     }
 
@@ -356,8 +334,7 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
         C: Fn(P) -> F + Send + Sync + 'static,
         F: Future<Output = R> + Send + Sync + 'static,
     {
-        let global_key = Event::All;
-        let exists = self.listeners.contains_key(&global_key);
+        let exists = self.listeners.pin().contains_key(&Event::All);
         assert!(!exists, "only one global listener is allowed");
         let id = Uuid::new_v4();
         let parsed_callback = move |value: P| callback(value).boxed();
@@ -369,8 +346,11 @@ impl<K: Clone + Ord, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, 
             callback: Arc::new(parsed_callback),
         };
 
-        let entry = self.listeners.get_or_insert(global_key, SkipMap::default());
-        entry.value().get_or_insert(id, listener);
+        self.listeners
+            .pin()
+            .get_or_insert_with(Event::All, Listeners::default)
+            .pin()
+            .insert(id, listener);
         id
     }
 

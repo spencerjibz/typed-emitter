@@ -12,7 +12,7 @@ A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/asy
 - Strong types for event type, its parameters and return Values
 - Support for any eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
 - Supports for all common async runtimes (Tokio, async-std and smol)
-- Thread Safe and can be used lock-free (supports interior mutability).
+- Lock-free and thread safe (supports interior mutability).
 
 **_Note_**: To use versatile serializable return and event types, use [`async-event-emitter`](https://crates.io/crates/async-event-emitter) for this.
 
@@ -120,7 +120,7 @@ You'll likely want to have a single EventEmitter instance for multiple events;<b
 
 ```rust
 use typed_emitter::TypedEmitter;
-#[derive(Eq,PartialEq, Clone, Ord, PartialOrd)]
+#[derive(Eq,PartialEq, Clone, Hash)]
 enum JobState {
      Closed,
      Completed,
