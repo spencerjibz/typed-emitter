@@ -1,24 +1,25 @@
-### typed-emitter
+# typed-emitter
 
 [![Crates.io](https://img.shields.io/crates/v/typed-emitter)](https://crates.io/crates/typed-emitter)
-[![docs.rs](https://img.shields.io/docsrs/async-event-emitter)](https://docs.rs/typed-emitter/)
+[![docs.rs](https://img.shields.io/docsrs/typed-emitter)](https://docs.rs/typed-emitter/)
 [![CI](https://github.com/spencerjibz/typed-emitter/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/typed-emitter/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MSRV](https://img.shields.io/badge/MSRV-1.72-blue)](https://github.com/spencerjibz/typed-emitter/actions/workflows/msrv.yml)
 
 A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/async-event-emitter)
 
-#### Key Features
+# Key Features
 
 - Strong types for event type, its parameters and return Values
 - Support for any eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
 - Supports for all common async runtimes (Tokio, async-std and smol)
-- Thread Safe and can be used lock-free (supports interior mutability).
+- Lock-free and thread safe (supports interior mutability).
 
 **_Note_**: To use versatile serializable return and event types, use [`async-event-emitter`](https://crates.io/crates/async-event-emitter) for this.
 
-#### Getting Started
+## Getting Started
 
-##### tokio
+#### tokio
 
 ```rust
 use typed_emitter::TypedEmitter;
@@ -29,7 +30,7 @@ let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
 }
 ```
 
-##### Async-std
+#### Async-std
 
 ```rust
 use typed_emitter::TypedEmitter;
@@ -41,7 +42,7 @@ let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
 
 ```
 
-##### smol
+#### smol
 
 ```rust
 use typed_emitter::TypedEmitter;
@@ -55,7 +56,7 @@ let emitter: TypedEmitter<String, i32, String> = TypedEmitter::new();
 
 ```
 
-#### Basic Usage
+## Basic Usage
 
 ```rust
 use typed_emitter::TypedEmitter;
@@ -77,13 +78,13 @@ emitter.once("event".to_string(), |value| async move {
 emitter.emit("event".to_string(), 42).await;
 
 // Remove a listener by ID
-emitter.remove_listener(&id);
+emitter.remove_listener(id);
 
 }
 
 ```
 
-#### Create a Global EventEmitter
+## Create a Global EventEmitter
 
 You'll likely want to have a single EventEmitter instance that can be shared across files;<br>
 
@@ -114,13 +115,13 @@ async fn random_function() {
 
 ```
 
-#### Emit multiple Events with the same emitter using an Enum
+## Emit multiple Events with the same emitter using an Enum
 
 You'll likely want to have a single EventEmitter instance for multiple events;<br>
 
 ```rust
 use typed_emitter::TypedEmitter;
-#[derive(Eq,PartialEq, Clone, Ord, PartialOrd)]
+#[derive(Eq,PartialEq, Clone, Hash)]
 enum JobState {
      Closed,
      Completed,
@@ -142,6 +143,8 @@ let emitter = TypedEmitter::new();
 
 ```
 
-#### License
+## Minimum supported Rust version
 
-MIT License (MIT), see [LICENSE](LICENSE)
+This crate requires Rust 1.72 or newer.
+
+License: [MIT](https://github.com/spencerjibz/typed-emitter/blob/main/LICENSE)

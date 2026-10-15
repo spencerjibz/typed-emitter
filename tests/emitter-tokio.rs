@@ -138,4 +138,66 @@ mod typed_async_emitter_tokio {
         // we expect the listener to be garage colleted  by here
         assert_eq!(instance.listener_count_by_event(&event), 0);
     }
+
+    #[tester::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn once_runs_once_under_concurrent_emits() {
+        for _ in 0..100 {
+            let emitter: TypedEmitter<&str, (), ()> = TypedEmitter::new();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            emitter.once("event", move |_| {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async {}
+            });
+
+            let tasks: Vec<_> = (0..8)
+                .map(|_| {
+                    let emitter = emitter.clone();
+                    tokio::spawn(async move { emitter.emit("event", ()).await })
+                })
+                .collect();
+            futures::future::join_all(tasks).await;
+
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+
+    #[test]
+    fn concurrent_on_all_installs_one_listener() {
+        for _ in 0..100 {
+            let emitter: TypedEmitter<&str, (), ()> = TypedEmitter::new();
+            let barrier = Arc::new(std::sync::Barrier::new(8));
+            let installed = (0..8)
+                .map(|_| {
+                    let emitter = emitter.clone();
+                    let barrier = barrier.clone();
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            emitter.on_all(|_| async {})
+                        }))
+                        .is_ok()
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .filter(|ok| *ok)
+                .count();
+
+            assert_eq!(installed, 1);
+        }
+    }
+
+    #[tester::test]
+    async fn removing_global_listener_returns_its_id() {
+        let emitter: TypedEmitter<&str, (), ()> = TypedEmitter::new();
+        let id = emitter.on_all(|_| async {});
+
+        assert_eq!(emitter.remove_listener(id), Some(id));
+        assert_eq!(emitter.remove_listener(id), None);
+
+        let replacement = emitter.on_all(|_| async {});
+        assert_eq!(emitter.remove_listener(replacement), Some(replacement));
+    }
 }

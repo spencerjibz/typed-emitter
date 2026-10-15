@@ -7,50 +7,28 @@ on:
           branches:
                - main
 
+env:
+     CARGO_TERM_COLOR: always
+
 jobs:
-     lint:
+     coverage:
           runs-on: ubuntu-latest
           steps:
-               - uses: actions/checkout@v1
-               - uses: actions-rs/toolchain@v1
+               - uses: actions/checkout@v4
+               - uses: dtolnay/rust-toolchain@nightly
                  with:
-                      toolchain: nightly-2024-09-26
-                      override: true
                       components: llvm-tools-preview
-               - uses: actions/cache@v3
+               - uses: Swatinem/rust-cache@v2
+               - uses: taiki-e/install-action@cargo-llvm-cov
+               - name: Run tests with coverage
+                 run: cargo llvm-cov --all-features --doctests --lcov --output-path lcov.info
+               - uses: actions/upload-artifact@v4
                  with:
-                      path: |
-                           ~/.cargo/bin/
-                           ~/.cargo/registry/index/
-                           ~/.cargo/registry/cache/
-                           ~/.cargo/git/db/
-                           target/
-                      key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-coverage
-
-               - uses: actions-rs/cargo@v1
-
-                 with:
-                      toolchain: nightly-2024-09-26
-                     
-                      command: test
-                      args: --all-features --no-fail-fast
-                 env:
-                      CARGO_INCREMENTAL: "0"
-                      RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests"
-                      RUSTDOCFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests"
-               - name: Download grcov
-                 run: |
-                      mkdir -p "${HOME}/.local/bin"
-                      curl -sL https://github.com/mozilla/grcov/releases/download/v0.8.10/grcov-x86_64-unknown-linux-gnu.tar.bz2 | tar jxf - -C "${HOME}/.local/bin"
-                      echo "$HOME/.local/bin" >> $GITHUB_PATH
-               - uses: actions-rs/grcov@v0.1
-                 id: coverage
-                 with:
-                      config: .github/grcov.yml
-
-               - name: List coverage files
-                 run: cat ${{steps.coverage.outputs.report}}  >> coverage.Icov
+                      name: coverage-report
+                      path: lcov.info
                - name: Upload coverage reports to Codecov
-                 uses: codecov/codecov-action@v3
-                 env:
-                      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+                 uses: codecov/codecov-action@v5
+                 with:
+                      files: lcov.info
+                      fail_ci_if_error: true
+                      token: ${{ secrets.CODECOV_TOKEN }}
