@@ -228,29 +228,53 @@ async fn emit_parallel(emitter: Emitter, tasks: usize, emits_each: u32) {
 
 async fn broadcast_add_and_emit(listeners: usize) {
     let (tx, _rx) = broadcast::channel::<u32>(16);
+    let mut handles = Vec::with_capacity(listeners);
     for _ in 0..listeners {
         let mut rx = tx.subscribe();
-        tokio::spawn(async move {
-            let _ = rx.recv().await;
-        });
+        handles.push(tokio::spawn(async move {
+            rx.recv().await.unwrap();
+        }));
     }
-    let _ = tx.send(black_box(1));
+    tx.send(black_box(1)).unwrap();
+    for handle in handles {
+        handle.await.unwrap();
+    }
 }
 
+const BROADCAST_CAPACITY: usize = 1024;
+
 async fn broadcast_parallel(tasks: usize, emits_each: u32) {
-    let (tx, mut rx) = broadcast::channel::<u32>(1024);
-    tokio::spawn(async move { while rx.recv().await.is_ok() {} });
+    let (tx, mut rx) = broadcast::channel::<u32>(BROADCAST_CAPACITY);
+    let receiver = tokio::spawn(async move {
+        let mut received = 0;
+        loop {
+            match rx.recv().await {
+                Ok(_) => received += 1,
+                Err(broadcast::error::RecvError::Closed) => return received,
+                Err(broadcast::error::RecvError::Lagged(n)) => panic!("receiver lagged by {n}"),
+            }
+        }
+    });
     let handles: Vec<_> = (0..tasks)
         .map(|_| {
             let tx = tx.clone();
             tokio::spawn(async move {
                 for i in 0..emits_each {
-                    let _ = tx.send(i);
+                    // Each producer sends at most once per check, so keeping
+                    // `tasks` slots free means the receiver can never lag.
+                    while tx.len() >= BROADCAST_CAPACITY - tasks {
+                        tokio::task::yield_now().await;
+                    }
+                    tx.send(i).unwrap();
                 }
             })
         })
         .collect();
-    futures::future::join_all(handles).await;
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    drop(tx);
+    assert_eq!(receiver.await.unwrap(), tasks * emits_each as usize);
 }
 
 fn compare(c: &mut Criterion) {
