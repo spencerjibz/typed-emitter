@@ -1,5 +1,11 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(
+    missing_debug_implementations,
+    missing_docs,
+    clippy::pedantic,
+    clippy::nursery
+)]
 
 use futures::future::{join_all, BoxFuture, Future, FutureExt};
 use std::hash::Hash;
@@ -7,12 +13,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// Type-erased listener callback: takes the emitted value and returns a future.
 pub type AsyncCB<T, R> = dyn Fn(T) -> BoxFuture<'static, R> + Send + Sync + 'static;
+/// A registered event listener.
 #[derive(Clone)]
 pub struct TypedListener<T, R> {
+    /// The callback run when the listener's event is emitted.
     pub callback: Arc<AsyncCB<T, R>>,
+    /// Whether this is the global listener registered with `on_all`.
     pub is_global: bool,
+    /// Remaining number of calls, or `None` if the listener never expires.
     pub limit: Option<Arc<AtomicU64>>,
+    /// Unique id returned when the listener was registered.
     pub id: Uuid,
 }
 impl<T, R> PartialEq for TypedListener<T, R> {
@@ -31,6 +43,9 @@ enum Event<K> {
 }
 type Listeners<T, R> = papaya::HashMap<Uuid, TypedListener<T, R>>;
 type ListenerMap<K, T, R> = Arc<papaya::HashMap<K, Listeners<T, R>>>;
+/// A typed, lock-free async event emitter.
+///
+/// Clones share the same listeners.
 #[derive(Clone)]
 pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
     listeners: ListenerMap<Event<Key>, CallBackParameter, CallBackReturnType>,
@@ -39,7 +54,7 @@ pub struct TypedEmitter<Key, CallBackParameter, CallBackReturnType = ()> {
 impl<K: Hash + Eq + Clone, P: Clone, R> Default for TypedEmitter<K, P, R> {
     fn default() -> Self {
         Self {
-            listeners: Default::default(),
+            listeners: Arc::default(),
         }
     }
 }
@@ -54,15 +69,19 @@ fn claim<T, R>(listener: &TypedListener<T, R>) -> bool {
 }
 
 impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<K, P, R> {
+    /// Creates an emitter with no listeners.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Return the number of events
+    #[must_use]
     pub fn event_count(&self) -> usize {
         self.listeners.len()
     }
     /// Returns the numbers of listners per event
+    #[must_use]
     pub fn listener_count_by_event(&self, event: &K) -> usize {
         self.listeners
             .pin()
@@ -70,6 +89,8 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
             .map_or(0, papaya::HashMap::len)
     }
 
+    /// Returns all listeners on the specified event
+    #[must_use]
     pub fn listeners_by_event(&self, event: &K) -> Vec<TypedListener<P, R>> {
         self.listeners
             .pin()
@@ -92,8 +113,8 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
     ///     emitter.emit("event", "Hello programmer!").await;
     /// }
     /// ```
-    ///
-    ///  
+    // The future is `Send` whenever `K`, `P` and `R` are
+    #[allow(clippy::future_not_send)]
     pub async fn emit(&self, event: K, value: P) {
         let futures = {
             let events = self.listeners.pin();
@@ -101,7 +122,7 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
             if let Some(listeners) = events.get(&Event::Unique(event)) {
                 let listeners = listeners.pin();
                 let mut expired = Vec::new();
-                for (id, listener) in listeners.iter() {
+                for (id, listener) in &listeners {
                     if claim(listener) {
                         futures.push((listener.callback)(value.clone()));
                     } else {
@@ -137,6 +158,8 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(listener_id);
     /// ```
+    // Callers often remove a listener without checking whether it existed
+    #[allow(clippy::must_use_candidate)]
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
         let events = self.listeners.pin();
         let removed = events.iter().any(|(event, listeners)| {
@@ -196,6 +219,10 @@ impl<K: Hash + Eq + Clone, P: Clone + 'static, R: Clone + 'static> TypedEmitter<
 
     /// Adds an event listener called for whenever every event is called
     /// Returns the id of the newly added listener.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a global listener is already registered.
     ///
     /// # Example
     /// ```rust
@@ -287,7 +314,7 @@ impl<T, R> std::fmt::Debug for TypedListener<T, R> {
             .field("id", &self.id)
             .field("is_global", &self.is_global)
             .field("limit", &self.limit)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 impl<Key, CallBackParameter, CallBackReturnType> std::fmt::Debug
