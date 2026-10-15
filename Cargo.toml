@@ -48,9 +48,5 @@ default-features = false
 features = ["rt", "macros", "rt-multi-thread", "sync"]
 
 [[bench]]
-name = 'emitter_bench'
-harness = false
-
-[[bench]]
 name = "emitter"
 harness = false

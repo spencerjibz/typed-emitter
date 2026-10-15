@@ -1,9 +1,12 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use tokio::sync::broadcast;
 use typed_emitter::TypedEmitter;
+use typed_emitter_old::TypedEmitter as OldEmitter;
 
 const BATCH: usize = 1000;
 const TASKS: usize = 8;
@@ -159,12 +162,155 @@ fn benches(c: &mut Criterion) {
     bench(c, &rt, true);
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum Event {
+    Hello,
+    Spam,
+    Ping,
+}
+
+/// This crate or the published 0.1.3 release, dispatched without boxing.
+#[derive(Clone)]
+enum Emitter {
+    Old(OldEmitter<Event, u32>),
+    New(TypedEmitter<Event, u32>),
+}
+
+impl Emitter {
+    fn old() -> Self {
+        Self::Old(OldEmitter::new())
+    }
+
+    fn new() -> Self {
+        Self::New(TypedEmitter::new())
+    }
+
+    fn listen(&self, event: Event) {
+        match self {
+            Self::Old(emitter) => {
+                emitter.on(event, |_| async {});
+            }
+            Self::New(emitter) => {
+                emitter.on(event, |_| async {});
+            }
+        }
+    }
+
+    async fn fire(&self, event: Event, payload: u32) {
+        match self {
+            Self::Old(emitter) => emitter.emit(event, payload).await,
+            Self::New(emitter) => emitter.emit(event, payload).await,
+        }
+    }
+}
+
+async fn add_and_emit(emitter: Emitter, event: Event, listeners: usize) {
+    for _ in 0..listeners {
+        emitter.listen(event);
+    }
+    emitter.fire(event, black_box(1)).await;
+}
+
+async fn emit_parallel(emitter: Emitter, tasks: usize, emits_each: u32) {
+    emitter.listen(Event::Ping);
+    let handles: Vec<_> = (0..tasks)
+        .map(|_| {
+            let emitter = emitter.clone();
+            tokio::spawn(async move {
+                for i in 0..emits_each {
+                    emitter.fire(Event::Ping, i).await;
+                }
+            })
+        })
+        .collect();
+    futures::future::join_all(handles).await;
+}
+
+async fn broadcast_add_and_emit(listeners: usize) {
+    let (tx, _rx) = broadcast::channel::<u32>(16);
+    for _ in 0..listeners {
+        let mut rx = tx.subscribe();
+        tokio::spawn(async move {
+            let _ = rx.recv().await;
+        });
+    }
+    let _ = tx.send(black_box(1));
+}
+
+async fn broadcast_parallel(tasks: usize, emits_each: u32) {
+    let (tx, mut rx) = broadcast::channel::<u32>(1024);
+    tokio::spawn(async move { while rx.recv().await.is_ok() {} });
+    let handles: Vec<_> = (0..tasks)
+        .map(|_| {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                for i in 0..emits_each {
+                    let _ = tx.send(i);
+                }
+            })
+        })
+        .collect();
+    futures::future::join_all(handles).await;
+}
+
+fn compare(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+
+    let mut group = c.benchmark_group("compare_emit_single");
+    group.bench_function("typed-emitter-0.1.3", |b| {
+        b.to_async(&rt)
+            .iter(|| add_and_emit(Emitter::old(), Event::Hello, 1));
+    });
+    group.bench_function("typed-emitter", |b| {
+        b.to_async(&rt)
+            .iter(|| add_and_emit(Emitter::new(), Event::Hello, 1));
+    });
+    group.bench_function("tokio-broadcast", |b| {
+        b.to_async(&rt).iter(|| broadcast_add_and_emit(1));
+    });
+    group.finish();
+
+    let mut group = c.benchmark_group("compare_emit_10k_listeners");
+    group.bench_function("typed-emitter-0.1.3", |b| {
+        b.to_async(&rt)
+            .iter(|| add_and_emit(Emitter::old(), Event::Spam, 10_000));
+    });
+    group.bench_function("typed-emitter", |b| {
+        b.to_async(&rt)
+            .iter(|| add_and_emit(Emitter::new(), Event::Spam, 10_000));
+    });
+    group.bench_function("tokio-broadcast", |b| {
+        b.to_async(&rt).iter(|| broadcast_add_and_emit(10_000));
+    });
+    group.finish();
+
+    let parallel = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(num_cpus::get())
+        .build()
+        .unwrap();
+    let mut group = c.benchmark_group("compare_emit_100k_parallel");
+    group.bench_function("typed-emitter-0.1.3", |b| {
+        b.to_async(&parallel)
+            .iter(|| emit_parallel(Emitter::old(), 4, 100_000));
+    });
+    group.bench_function("typed-emitter", |b| {
+        b.to_async(&parallel)
+            .iter(|| emit_parallel(Emitter::new(), 4, 100_000));
+    });
+    group.bench_function("tokio-broadcast", |b| {
+        b.to_async(&parallel)
+            .iter(|| broadcast_parallel(4, 100_000));
+    });
+    group.finish();
+}
+
 criterion_group! {
     name = emitter_benches;
     config = Criterion::default()
         .warm_up_time(Duration::from_secs(1))
         .measurement_time(Duration::from_secs(3))
         .sample_size(20);
-    targets = benches
+    targets = benches, compare
 }
 criterion_main!(emitter_benches);
