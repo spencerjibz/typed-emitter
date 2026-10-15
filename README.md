@@ -4,6 +4,7 @@
 [![docs.rs](https://img.shields.io/docsrs/typed-emitter)](https://docs.rs/typed-emitter/)
 [![CI](https://github.com/spencerjibz/typed-emitter/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/typed-emitter/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MSRV](https://img.shields.io/badge/MSRV-1.72-blue)](https://github.com/spencerjibz/typed-emitter/actions/workflows/msrv.yml)
 
 A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/async-event-emitter)
 
@@ -141,5 +142,9 @@ let emitter = TypedEmitter::new();
 }
 
 ```
+
+## Minimum supported Rust version
+
+This crate requires Rust 1.72 or newer.
 
 License: [MIT](https://github.com/spencerjibz/typed-emitter/blob/main/LICENSE)
