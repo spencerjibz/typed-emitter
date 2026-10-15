@@ -42,7 +42,7 @@ jobs:
                            printf '\n[[bench]]\nname = "emitter"\nharness = false\n' >> Cargo.toml
                            echo "BASE_USES_PR_BENCHES=true" >> "$GITHUB_ENV"
                       fi
-                      cargo bench --bench emitter -- --save-baseline base \
+                      cargo bench --bench emitter -- --save-baseline base '^(emit_|on_then_remove|concurrent_)' \
                            || echo "::warning::benchmarks failed to build or run on $BASE_REF"
                - name: Benchmark pull request
                  run: cargo bench --bench emitter -- --save-baseline pr
