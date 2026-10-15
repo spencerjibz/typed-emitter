@@ -13,7 +13,7 @@ A strongly-typed version of [`async-event-emitter`](https://crates.io/crates/asy
 - Strong types for event type, its parameters and return Values
 - Support for any eventType (Strings, Enums, or any type that implements Hash, Eq and Clone)
 - Supports for all common async runtimes (Tokio, async-std and smol)
-- Lock-free and thread safe (supports interior mutability).
+- Lock-free and thread safe.
 
 **_Note_**: To use versatile serializable return and event types, use [`async-event-emitter`](https://crates.io/crates/async-event-emitter) for this.
 
